@@ -1,0 +1,15 @@
+## Interface: 16001
+## Title: Forever Warband Raiders
+## Notes: Level 60 companion for WoW Forever: raid readiness, gear plans, lockouts and raid night prep across your warband.
+## Author: MudkipDev
+## Version: 0.1.0
+## SavedVariables: FWRDB
+## OptionalDeps: ForeverWarbandJourney, Auctionator
+## IconTexture: Interface\Icons\INV_Misc_Head_Dragon_01
+
+Core.lua
+Scan.lua
+Ready.lua
+Plans.lua
+UI.lua
+Panel.lua

@@ -1,0 +1,7 @@
+package-as: ForeverWarbandRaiders
+move-folders:
+  ForeverWarbandRaiders/ForeverWarbandRaiders: ForeverWarbandRaiders
+ignore:
+  - test
+  - README.md
+  - CHANGELOG.md
