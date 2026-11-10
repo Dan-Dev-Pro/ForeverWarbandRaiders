@@ -2,6 +2,7 @@
 local function obj()
   local o = {_shown=false, _text=""}
   return setmetatable(o, {__index=function(t,k)
+    if type(k)=="string" and k:sub(1,1)=="_" then return nil end
     if k=="CreateFontString" or k=="CreateTexture" then return function() return obj() end end
     if k=="Show" then return function(s) s._shown=true end end
     if k=="Hide" then return function(s) s._shown=false end end
@@ -53,3 +54,10 @@ C_DateAndTime={GetSecondsUntilWeeklyReset=function() return 2*86400+3600*5 end, 
 tinsert=table.insert
 EVENTS={}
 function FIRE(e,...) local f=FWR.ev; if f._OnEvent then f._OnEvent(f,e,...) end end
+CURSOR=nil
+GetCursorInfo=function() if CURSOR then return "item", CURSOR end end
+ClearCursor=function() CURSOR=nil end
+IsControlKeyDown=function() return false end
+IsShiftKeyDown=function() return false end
+GetItemIcon=function(id) return "icon"..id end
+GetInventorySlotInfo=function(n) return 1, "Interface\\PaperDoll\\UI-PaperDoll-Slot-"..n end

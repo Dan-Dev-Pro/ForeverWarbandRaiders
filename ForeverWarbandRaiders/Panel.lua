@@ -87,34 +87,88 @@ local function gearOps(key)
     items[#items + 1] = { t = "bar", v = have, max = total, col = have == total and C.ok or C.warn,
       text = string.format("%d of %d target items owned", have, total) }
   end
-  local hidden = 0
+  -- character-page layout
+  local sel = R.findSlot or 1
+  local doll = { t = "paperdoll", slots = {}, sel = sel }
+  local function plannedTip(slot, w, st)
+    return function(tt)
+      if tt.SetItemByID then tt:SetItemByID(w.id) else tt:SetHyperlink("item:" .. w.id) end
+      tt:AddLine(" ")
+      tt:AddLine(R.SLOTNAME[slot] .. ": " .. st[2], C[st[1]][1], C[st[1]][2], C[st[1]][3])
+      local js = R:JournalSource(w.id)
+      if w.src then tt:AddLine("Source: " .. w.src, 0.9, 0.9, 0.9) end
+      if js then tt:AddLine("Dungeon Journal: " .. js, 0.85, 0.66, 0.24) end
+      tt:AddLine("Click: show drops for this slot · Right-click: remove", 0.6, 0.6, 0.6, true)
+      if R:FDJ() then tt:AddLine("Ctrl-click: open in Dungeon Journal", 0.6, 0.6, 0.6) end
+    end
+  end
   for _, s in ipairs(R.SLOTS) do
-    local slot, sname = s[1], s[2]
+    local slot = s[1]
     local w = set.slots[slot]
     if w then
       local where = R:Where(key, w.id)
       local st = where and WHERE[where] or { "unknown", "Wanted" }
-      items[#items + 1] = { t = "row", icon = R.ICON[st[1]], l = "|cff9d9d9d" .. sname .. ":|r " .. R:ItemName(w.id),
-        r = (where == "bags" or where == "bank") and st[2] or (w.src or R:JournalSource(w.id) or st[2]),
-        rc = where and C[st[1]] or C.grey, rw = 190,
-        click = R:FDJ() and function() R:OpenInJournal(w.id) end or nil,
-        tip = function(tt)
-          if GameTooltip.SetItemByID then tt:SetItemByID(w.id) else tt:SetHyperlink("item:" .. w.id) end
-          tt:AddLine(" ")
-          tt:AddLine("Status: " .. st[2], 1, 0.82, 0)
-          local js = R:JournalSource(w.id)
-          if w.src then tt:AddLine("Source: " .. w.src, 0.9, 0.9, 0.9) end
-          if js then tt:AddLine("Dungeon Journal: " .. js, 0.85, 0.66, 0.24) end
-          if R:FDJ() then tt:AddLine("Click to open in Dungeon Journal", 0.6, 0.6, 0.6) end
-        end,
-        btns = { { "x", function() R:RemoveWanted(key, si, slot) end, tip = "Remove from plan" } } }
+      doll.slots[slot] = { id = w.id, state = st[1], tip = plannedTip(slot, w, st) }
     else
-      hidden = hidden + 1
+      local e = (c.equip or {})[slot]
+      doll.slots[slot] = { empty = true, equipped = e and e.id, tip = function(tt)
+        tt:SetText(R.SLOTNAME[slot], 1, 0.82, 0)
+        tt:AddLine("Not planned yet.", 0.8, 0.8, 0.8)
+        if e and e.id then tt:AddLine("Wearing: " .. R:ItemName(e.id), 0.8, 0.8, 0.8) end
+        tt:AddLine("Drag an item here, or shift-click one into the box above.", 0.6, 0.6, 0.6, true)
+      end }
     end
   end
-  if hidden > 0 then
-    items[#items + 1] = { t = "note", text = hidden .. " slots not planned yet." }
+  doll.click = function(slot, button)
+    local w = set.slots[slot]
+    if button == "RightButton" then
+      if w then R:RemoveWanted(key, si, slot) end
+    elseif IsControlKeyDown and IsControlKeyDown() and w then
+      R:OpenInJournal(w.id)
+    elseif IsShiftKeyDown and IsShiftKeyDown() and w then
+      local info = R:ItemInfo(w.id)
+      if info and ChatEdit_InsertLink then ChatEdit_InsertLink(info.link) end
+    else
+      R.findSlot = slot
+    end
   end
+  doll.drop = function(slot, id)
+    local ok, msg = R:DropOnSlot(key, si, slot, id)
+    if not ok then R:Print(msg) end
+  end
+  -- centre: the picked slot
+  local w = set.slots[sel]
+  local lines = {
+    { set.name, C.gold, "GameFontNormalLarge" },
+    { total > 0 and (have .. " of " .. total .. " planned items owned") or "Nothing planned yet", C.grey },
+    { " " },
+    { R.SLOTNAME[sel] or "?", C.gold, "GameFontNormal" },
+  }
+  if w then
+    local where = R:Where(key, w.id)
+    local st = where and WHERE[where] or { "unknown", "Wanted" }
+    lines[#lines + 1] = { R:ItemName(w.id) }
+    lines[#lines + 1] = { st[2], C[st[1]] }
+    local src = w.src or R:JournalSource(w.id)
+    if src then lines[#lines + 1] = { src, C.grey } end
+  else
+    lines[#lines + 1] = { "Not planned", C.grey }
+    local e = (c.equip or {})[sel]
+    if e and e.id then lines[#lines + 1] = { "Wearing " .. R:ItemName(e.id), C.grey } end
+  end
+  doll.center = lines
+  -- 3D preview of the planned set: only possible for the character you're logged in on
+  if key == R.key then
+    local ids = {}
+    for _, s in ipairs(R.SLOTS) do
+      local pw = set.slots[s[1]]
+      local e = (c.equip or {})[s[1]]
+      if pw then ids[#ids + 1] = pw.id elseif e and e.id then ids[#ids + 1] = e.id end
+    end
+    doll.tryOn = ids
+  end
+  items[#items + 1] = doll
+  items[#items + 1] = { t = "note", text = "Click a slot to see its drops below. Drag an item onto a slot to plan it. Right-click clears a slot, Ctrl-click opens it in the Dungeon Journal." }
   ops[#ops + 1] = { t = "card", title = set.name, right = total > 0 and (have .. "/" .. total .. " owned") or "No items yet", items = items }
 
   if R:FDJ() then

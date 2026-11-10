@@ -46,6 +46,16 @@ function R:AddWanted(key, text, setIdx, forceSlot)
   return true, self:ItemName(id)
 end
 
+-- An item dragged onto a slot: check it fits there
+function R:DropOnSlot(key, setIdx, slot, id)
+  local info = self:ItemInfo(id)
+  if not info then return false, "Item not loaded yet, try again." end
+  local fits = false
+  for _, s in ipairs(self.EQUIPLOC[info.loc or ""] or {}) do if s == slot then fits = true end end
+  if not fits then return false, info.link .. " doesn't go in the " .. (self.SLOTNAME[slot] or "?") .. " slot." end
+  return self:AddWanted(key, tostring(id), setIdx, slot)
+end
+
 function R:RemoveWanted(key, setIdx, slot)
   local c = self:Char(key)
   c.sets[setIdx].slots[slot] = nil

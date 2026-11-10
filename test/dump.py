@@ -12,13 +12,13 @@ rt.execute(open('t1.lua').read().split('local r=R:Readiness')[0])
 rt.execute('''ForeverDungeonJournalCharacterDB={favouriteItems={["13361"]={id=13361,name="Skullforge Reaver",slot="One-Hand, Sword",quality=3,dungeon="Stratholme: Undead",boss="Baron Rivendare"},["12936"]={id=12936,name="Battleborn Armbraces",slot="Wrist, Plate",quality=3,dungeon="Upper Blackrock Spire",boss="Warchief Rend Blackhand"}},
  runLog={runs={{dungeon="Blackmaw Hold",created=NOW-3600,kills={{b="Impaan the Imprisoner"},{b="Bonesnout"}}},{dungeon="Blackmaw Hold",created=NOW-7200,kills={{b="Impaan the Imprisoner"}}},{dungeon="Shaper's Terrace",created=NOW-90000,kills={{b="x"}}}}}}
 ITEMS[13361]={"Skullforge Reaver","INVTYPE_WEAPON"}; ITEMS[12936]={"Battleborn Armbraces","INVTYPE_WRIST"}
-FWR:SyncJournal(); FWR.findSlot=1''')
+FWR:SyncJournal(); FWR.findSlot=13''')
 def conv(x):
     if L.lua_type(x)=='table':
         keys=list(x.keys())
-        if keys and all(isinstance(k,int) for k in keys):
+        if keys and all(isinstance(k,int) for k in keys) and sorted(keys)==list(range(1,len(keys)+1)):
             return [conv(x[k]) for k in sorted(keys)]
-        return {str(k):conv(v) for k,v in x.items() if L.lua_type(v)!='function'}
+        return {k if isinstance(k,int) else str(k):conv(v) for k,v in x.items() if L.lua_type(v)!='function'}
     if L.lua_type(x)=='function': return None
     return x
 R=rt.globals().FWR

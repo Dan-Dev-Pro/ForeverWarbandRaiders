@@ -255,6 +255,90 @@ function R:Render(ops)
         bx = bx + bwid + 4
       end
       y = y + ROW + 6
+    elseif t == "paperdoll" then
+      local S, G = 38, 5
+      local top = y + 2
+      local function place(slot, bx, by)
+        local b = get("slot", function()
+          local s = CreateFrame("Button", nil, child)
+          s:SetSize(S, S)
+          s:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+          s:RegisterForDrag("LeftButton")
+          s.edge = s:CreateTexture(nil, "BACKGROUND"); s.edge:SetAllPoints()
+          s.icon = s:CreateTexture(nil, "ARTWORK")
+          s.icon:SetPoint("TOPLEFT", 2, -2); s.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+          s.hl = s:CreateTexture(nil, "HIGHLIGHT"); s.hl:SetAllPoints(s.icon)
+          s.hl:SetColorTexture(1, 1, 1, 0.15)
+          return s
+        end)
+        b:SetPoint("TOPLEFT", child, "TOPLEFT", bx, -by)
+        local d = op.slots[slot]
+        if type(slot) == "string" or not d then
+          -- shirt and tabard: shown for the familiar layout only
+          b.icon:SetTexture(R:EmptySlotTexture(slot)); b.icon:SetDesaturated(true); b.icon:SetAlpha(0.35)
+          b.edge:SetColorTexture(0.15, 0.15, 0.15, 1)
+          b:SetScript("OnClick", nil); b:SetScript("OnReceiveDrag", nil)
+          b:SetScript("OnEnter", nil); b:SetScript("OnLeave", nil)
+          return
+        end
+        b.icon:SetDesaturated(false)
+        if d.empty then
+          b.icon:SetTexture(R:EmptySlotTexture(slot)); b.icon:SetAlpha(0.8)
+        else
+          b.icon:SetTexture(R:ItemIcon(d.id)); b.icon:SetAlpha(1)
+        end
+        local col = d.empty and { 0.25, 0.25, 0.25 } or (R.COL[d.state] or R.COL.grey)
+        if op.sel == slot then col = { 1, 0.82, 0 } end
+        b.edge:SetColorTexture(col[1], col[2], col[3], 1)
+        local function dropped()
+          local kind, id = GetCursorInfo()
+          if kind == "item" and id then op.drop(slot, id); ClearCursor(); R:Refresh(); return true end
+        end
+        b:SetScript("OnClick", function(_, button)
+          if dropped() then return end
+          op.click(slot, button); R:Refresh()
+        end)
+        b:SetScript("OnReceiveDrag", dropped)
+        b:SetScript("OnEnter", nil); b:SetScript("OnLeave", nil)
+        tip(b, d.tip)
+      end
+      local LEFT = { 1, 2, 3, 15, 5, "shirt", "tabard", 9 }
+      local RIGHT = { 10, 6, 7, 8, 11, 12, 13, 14 }
+      for i, slot in ipairs(LEFT) do place(slot, x, top + (i - 1) * (S + G)) end
+      for i, slot in ipairs(RIGHT) do place(slot, x + w - S, top + (i - 1) * (S + G)) end
+      local by = top + 8 * (S + G) + 6
+      local bx = x + (w - (3 * S + 2 * G)) / 2
+      for i, slot in ipairs({ 16, 17, 18 }) do place(slot, bx + (i - 1) * (S + G), by) end
+      -- centre panel: the picked slot
+      local cy = top + 4
+      local cx, cw = x + S + 16, w - 2 * S - 32
+      for _, line in ipairs(op.center or {}) do
+        local s = text(cx, cy, cw, line[1], line[2], line[3], "CENTER")
+        cy = cy + math.max(14, s:GetStringHeight() or 14) + 3
+      end
+      -- the logged-in character, dressed in the planned set
+      if op.tryOn and CreateFrame then
+        local m = get("model", function()
+          local ok, f = pcall(CreateFrame, "DressUpModel", nil, child)
+          if not ok or not f then ok, f = pcall(CreateFrame, "PlayerModel", nil, child) end
+          return ok and f or CreateFrame("Frame", nil, child)
+        end)
+        local mh = by - cy - 8
+        if mh > 80 then
+          m:SetPoint("TOPLEFT", child, "TOPLEFT", cx, -(cy + 4))
+          m:SetSize(cw, mh)
+          local sig = table.concat(op.tryOn, ",")
+          if m.SetUnit and m.fwrSig ~= sig then
+            m.fwrSig = sig
+            pcall(m.SetUnit, m, "player")
+            if m.Undress then pcall(m.Undress, m) end
+            if m.TryOn then for _, id in ipairs(op.tryOn) do pcall(m.TryOn, m, "item:" .. id) end end
+          end
+        else
+          m:Hide()
+        end
+      end
+      y = by + S + 8
     elseif t == "card" then
       local top = y
       local card = get("card", function()

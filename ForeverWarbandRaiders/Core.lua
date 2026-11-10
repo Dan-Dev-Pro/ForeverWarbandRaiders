@@ -2,7 +2,7 @@
 FWR = FWR or {}
 local R = FWR
 R.NAME = "Forever Warband Raiders"
-R.VERSION = "0.2.0"
+R.VERSION = "0.3.0"
 R.MAXLVL = 60
 
 -- Gear slots that matter for raiding (shirt and tabard left out)
@@ -130,6 +130,29 @@ function R:ItemInfo(id)
     return
   end
   return { name = name, link = link, q = quality, loc = equipLoc, icon = icon, cls = classID, sub = subclassID }
+end
+
+local SLOTKEY = {
+  [1] = "HeadSlot", [2] = "NeckSlot", [3] = "ShoulderSlot", [15] = "BackSlot", [5] = "ChestSlot",
+  shirt = "ShirtSlot", tabard = "TabardSlot", [9] = "WristSlot", [10] = "HandsSlot", [6] = "WaistSlot",
+  [7] = "LegsSlot", [8] = "FeetSlot", [11] = "Finger0Slot", [12] = "Finger1Slot", [13] = "Trinket0Slot",
+  [14] = "Trinket1Slot", [16] = "MainHandSlot", [17] = "SecondaryHandSlot", [18] = "RangedSlot",
+}
+
+-- The empty-slot picture from the character window
+function R:EmptySlotTexture(slot)
+  local name = SLOTKEY[slot]
+  if name and GetInventorySlotInfo then
+    local ok, _, tex = pcall(GetInventorySlotInfo, name)
+    if ok and tex then return tex end
+  end
+  return "Interface\\PaperDoll\\UI-Backpack-EmptySlot"
+end
+
+function R:ItemIcon(id)
+  local icon = (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(id)) or (GetItemIcon and GetItemIcon(id))
+  if not icon then local i = self:ItemInfo(id); icon = i and i.icon end
+  return icon or "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
 function R:ItemName(id)
