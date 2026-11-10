@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+- Blizzard-style window: portrait, title bar, inset panels, tabs along the bottom, native slot frames
+- Two-column layouts on every tab, less scrolling
+- Gear: character on the left, Drops / Favourites / Plan panel on the right; drops show item icons, grouped by dungeon, nine per page
+- Plan sharing moved to Settings
+
 ## 0.3.0
 - Gear sets laid out like the character window: slots down both sides, weapons along the bottom, coloured by status
 - 3D preview of your character wearing the planned set

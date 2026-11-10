@@ -73,13 +73,13 @@ local function gearOps(key)
   local ops = {}
   local c = R:Char(key)
   local si = R:SetIndex(key)
-  ops[#ops + 1] = { t = "btns", list = {
-    { (si == 1 and "> " or "") .. c.sets[1].name, function() c.setIdx = 1 end, w = 150 },
-    { (si == 2 and "> " or "") .. c.sets[2].name, function() c.setIdx = 2 end, w = 150 },
-  } }
   local set = c.sets[si]
   local have, total = R:SetProgress(key, si)
   local items = {
+    { t = "btns", list = {
+      { (si == 1 and "> " or "") .. c.sets[1].name, function() c.setIdx = 1 end, w = 150 },
+      { (si == 2 and "> " or "") .. c.sets[2].name, function() c.setIdx = 2 end, w = 150 },
+    } },
     { t = "input", btn = "Add", fn = function(v) return R:AddWanted(key, v, si) end,
       tip = "Shift-click an item into this box, then type where it drops (optional) and press Enter." },
   }
@@ -130,6 +130,8 @@ local function gearOps(key)
       if info and ChatEdit_InsertLink then ChatEdit_InsertLink(info.link) end
     else
       R.findSlot = slot
+      R.dropPage = 1
+      if R:FDJ() then R.sideMode = "Drops" end
     end
   end
   doll.drop = function(slot, id)
@@ -139,9 +141,6 @@ local function gearOps(key)
   -- centre: the picked slot
   local w = set.slots[sel]
   local lines = {
-    { set.name, C.gold, "GameFontNormalLarge" },
-    { total > 0 and (have .. " of " .. total .. " planned items owned") or "Nothing planned yet", C.grey },
-    { " " },
     { R.SLOTNAME[sel] or "?", C.gold, "GameFontNormal" },
   }
   if w then
@@ -168,20 +167,8 @@ local function gearOps(key)
     doll.tryOn = ids
   end
   items[#items + 1] = doll
-  items[#items + 1] = { t = "note", text = "Click a slot to see its drops below. Drag an item onto a slot to plan it. Right-click clears a slot, Ctrl-click opens it in the Dungeon Journal." }
-  ops[#ops + 1] = { t = "card", title = set.name, right = total > 0 and (have .. "/" .. total .. " owned") or "No items yet", items = items }
-
-  if R:FDJ() then
-    for _, op in ipairs(R:JournalGearOps(key, si)) do ops[#ops + 1] = op end
-  end
-
-  ops[#ops + 1] = { t = "card", title = "Share a plan", items = {
-    { t = "note", text = "Export copies both gear sets and the prep list into the box. Paste a friend's string in and press Enter to import it onto this character." },
-    { t = "input", value = R.exportStr, clear = true, btn = "Import",
-      fn = function(v) R.exportStr = nil; return R:Import(key, v) end },
-    { t = "btns", list = { { "Export", function() R.exportStr = R:Export(key) end, w = 90 } } },
-  } }
-  return ops
+  local left = { { t = "card", title = set.name, right = total > 0 and (have .. "/" .. total .. " owned") or "No items yet", items = items } }
+  return { { t = "cols", split = 0.5, left = left, right = R:GearSideOps(key, si) } }
 end
 
 -- Lockouts -------------------------------------------------------------------------------------
@@ -334,89 +321,161 @@ local function settingsOps(key)
       btns = k ~= R.key and { { "x", function() R.db.chars[k] = nil; if R.view == k then R.view = R.key end end, tip = "Forget this character" } } or nil }
   end
   ops[#ops + 1] = { t = "card", title = "Characters", items = chars }
+  ops[#ops + 1] = { t = "card", title = "Share a plan", right = cname(key), items = {
+    { t = "note", text = "Export copies both gear sets and the prep list into the box. Paste a friend's string in and press Enter to import it onto this character." },
+    { t = "input", value = R.exportStr, clear = true, btn = "Import",
+      fn = function(v) R.exportStr = nil; return R:Import(key, v) end },
+    { t = "btns", list = { { "Export", function() R.exportStr = R:Export(key) end, w = 90 } } },
+  } }
   return ops
 end
 
 local BUILD = { Ready = readyOps, Gear = gearOps, Lockouts = lockoutOps, Prep = prepOps, Settings = settingsOps }
 
+-- How many cards go in the left column on each tab (the rest go right)
+local SPLIT = { Ready = function() return 1 end, Prep = function() return 1 end,
+  Lockouts = function() return R:FDJ() and 2 or 1 end, Settings = function() return 2 end }
+
 function R:BuildOps(tab, key)
-  return (BUILD[tab] or readyOps)(key or self.view or self.key)
+  local ops = (BUILD[tab] or readyOps)(key or self.view or self.key)
+  local k = SPLIT[tab] and SPLIT[tab]()
+  if not k then return ops end
+  local left, right = {}, {}
+  for i, op in ipairs(ops) do if i <= k then left[#left + 1] = op else right[#right + 1] = op end end
+  return { { t = "cols", split = 0.5, left = left, right = right } }
 end
 
 -- Gear tab: Dungeon Journal favourites and drop finder ---------------------------------------------
 local QHEX = { [0] = "9d9d9d", [1] = "ffffff", [2] = "1eff00", [3] = "0070dd", [4] = "a335ee", [5] = "ff8000" }
 
-function R:JournalGearOps(key, si)
-  local ops = {}
+local QCOL = { [0] = { 0.62, 0.62, 0.62 }, [1] = { 1, 1, 1 }, [2] = { 0.12, 1, 0 }, [3] = { 0, 0.44, 0.87 },
+  [4] = { 0.64, 0.21, 0.93 }, [5] = { 1, 0.5, 0 } }
+local PAGE = 9
+
+local function qname(name, q) return "|cff" .. (QHEX[q or 1] or "ffffff") .. (name or "?") .. "|r" end
+
+local function itemTip(id, extra)
+  return function(tt)
+    if tt.SetItemByID then tt:SetItemByID(id) else tt:SetHyperlink("item:" .. id) end
+    if extra then extra(tt) end
+  end
+end
+
+-- Right-hand panel of the Gear tab: Drops, Favourites or the plan as a list
+function R:GearSideOps(key, si)
   local c = self:Char(key)
   local set = c.sets[si]
+  local hasJ = self:FDJ() ~= nil
+  local modes = hasJ and { "Drops", "Favourites", "Plan" } or { "Plan" }
+  local mode = R.sideMode
+  local valid = false
+  for _, m in ipairs(modes) do if m == mode then valid = true end end
+  if not valid then mode = modes[1]; R.sideMode = mode end
+
+  local seg = {}
+  for _, m in ipairs(modes) do
+    seg[#seg + 1] = { (m == mode and "> " or "") .. m, function() R.sideMode = m; R.dropPage = 1 end, w = 100 }
+  end
+  local items = { { t = "btns", list = seg } }
   local inPlan = {}
   for _, w in pairs(set.slots) do inPlan[w.id] = true end
+  local function addBtn(id, slot)
+    return { { inPlan[id] and "In plan" or "+", function()
+      if inPlan[id] then return end
+      local ok, m = R:AddWanted(key, tostring(id), si, slot); if not ok then R:Print(m) end
+    end, w = inPlan[id] and 56 or 24, tip = inPlan[id] and "Already in " .. set.name or ("Add to " .. set.name) } }
+  end
 
-  -- favourites
-  local favItems = {}
-  for _, f in ipairs(c.fdjFavs or {}) do
-    if not inPlan[f.id] then
-      local slots = R.parseSlot(f.slot)
-      local fi = R:ItemInfo(f.id)
-      favItems[#favItems + 1] = { t = "row", l = (fi and fi.link) or ("|cff" .. (QHEX[f.q] or "ffffff") .. "[" .. (f.name or f.id) .. "]|r"),
-        r = f.quest and ("Quest · " .. (f.dungeon or "?")) or ((f.boss or "?") .. " · " .. (f.dungeon or "?")), rw = 200,
-        tip = function(tt) if tt.SetItemByID then tt:SetItemByID(f.id) else tt:SetHyperlink("item:" .. f.id) end end,
-        btns = slots and { { "Add", function() local ok, m = R:AddWanted(key, tostring(f.id), si, nil); if not ok then R:Print(m) end end, w = 44, tip = "Add to " .. set.name } } or nil }
+  if mode == "Drops" then
+    R.findSlot = R.findSlot or 1
+    local slotIdx = 1
+    for i, s in ipairs(R.SLOTS) do if s[1] == R.findSlot then slotIdx = i end end
+    local function stepSlot(d)
+      slotIdx = ((slotIdx - 1 + d) % #R.SLOTS) + 1
+      R.findSlot = R.SLOTS[slotIdx][1]; R.dropPage = 1
     end
-  end
-  if #favItems > 0 or (c.fdjFavs and #c.fdjFavs > 0) then
-    if #favItems == 0 then favItems[1] = { t = "row", l = "All your favourites are in this plan.", lc = C.ok } end
-    ops[#ops + 1] = { t = "card", title = "Journal favourites", right = (key == R.key) and "live" or ("as of " .. (c.fdjSeen and R:Dur(time() - c.fdjSeen) .. " ago" or "?")), items = favItems }
-  end
-
-  -- drop finder
-  R.findSlot = R.findSlot or 1
-  local slotIdx = 1
-  for i, s in ipairs(R.SLOTS) do if s[1] == R.findSlot then slotIdx = i end end
-  local function stepSlot(d)
-    slotIdx = ((slotIdx - 1 + d) % #R.SLOTS) + 1
-    R.findSlot = R.SLOTS[slotIdx][1]
-  end
-  local armor = R.CLASS_ARMOR[c.class or ""]
-  local items = {
-    { t = "btns", list = {
+    local armor = R.CLASS_ARMOR[c.class or ""]
+    items[#items + 1] = { t = "btns", list = {
       { "<", function() stepSlot(-1) end, w = 24 },
-      { R.SLOTNAME[R.findSlot], function() end, w = 110 },
+      { R.SLOTNAME[R.findSlot], function() end, w = 100, tip = "Pick a slot here or click one on the character" },
       { ">", function() stepSlot(1) end, w = 24 },
       { R.allArmor and "All armour" or ((armor and (armor:sub(1, 1):upper() .. armor:sub(2))) or "All") .. " only",
-        function() R.allArmor = not R.allArmor end, w = 110, tip = "Switch between your armour type and every type" },
-    } },
-  }
-  local list = R:Suggestions(key, R.findSlot, R.allArmor)
-  local planned = set.slots[R.findSlot]
-  for i, s in ipairs(list) do
-    if i > 30 then
-      items[#items + 1] = { t = "note", text = (#list - 30) .. " more not shown." }
-      break
+        function() R.allArmor = not R.allArmor; R.dropPage = 1 end, w = 104, tip = "Switch between your armour type and every type" },
+    } }
+    local list = R:Suggestions(key, R.findSlot, R.allArmor)
+    local pages = math.max(1, math.ceil(#list / PAGE))
+    R.dropPage = math.min(math.max(1, R.dropPage or 1), pages)
+    local first = (R.dropPage - 1) * PAGE + 1
+    local lastD
+    for i = first, math.min(#list, first + PAGE - 1) do
+      local d = list[i]
+      if d.dungeon ~= lastD then
+        items[#items + 1] = { t = "head", text = d.dungeon, r = d.level and ("level " .. d.level) or nil }
+        lastD = d.dungeon
+      end
+      local info = d.id and R:ItemInfo(d.id)
+      items[#items + 1] = { t = "itemrow",
+        icon = d.id and R:ItemIcon(d.id) or nil, dim = not d.id, qcol = QCOL[d.q or 1],
+        name = (info and info.link) or qname("[" .. d.name .. "]", d.q),
+        sub = d.boss .. ((d.stats and d.stats ~= "") and ("  ·  " .. d.stats) or ""),
+        tip = d.id and itemTip(d.id, function(tt) tt:AddLine(d.boss .. " · " .. d.dungeon, 0.85, 0.66, 0.24); tt:AddLine("Click to open in Dungeon Journal", 0.6, 0.6, 0.6) end)
+          or function(tt)
+            tt:SetText(d.name, 1, 1, 1)
+            for _, line in ipairs(d.tip or {}) do
+              if type(line) == "table" then tt:AddDoubleLine(line[1], line[2], 1, 1, 1, 1, 1, 1) else tt:AddLine(line, 1, 1, 1, true) end
+            end
+            tt:AddLine("Item ID not known yet: loot or link it once to add it.", 1, 0.5, 0.5, true)
+          end,
+        click = d.id and function() R:OpenInJournal(d.id) end or nil,
+        btns = d.id and addBtn(d.id, R.findSlot) or nil }
     end
-    local info = s.id and R:ItemInfo(s.id)
-    local name = (info and info.link) or ("|cff" .. (QHEX[s.q] or "ffffff") .. "[" .. s.name .. "]|r")
-    local mark = (planned and s.id and planned.id == s.id) and "|cffffd100> |r" or ""
-    items[#items + 1] = { t = "row", l = mark .. name .. (s.stats ~= "" and (" |cff9d9d9d" .. s.stats .. "|r") or ""),
-      r = s.boss .. " · " .. s.dungeon, rw = 200,
-      tip = function(tt)
-        if s.id then
-          if tt.SetItemByID then tt:SetItemByID(s.id) else tt:SetHyperlink("item:" .. s.id) end
-        else
-          tt:SetText(s.name, 1, 1, 1)
-          for _, line in ipairs(s.tip or {}) do
-            if type(line) == "table" then tt:AddDoubleLine(line[1], line[2], 1, 1, 1, 1, 1, 1)
-            else tt:AddLine(line, 1, 1, 1, true) end
-          end
-          tt:AddLine("Item ID not known yet: loot or link it once to add it.", 1, 0.5, 0.5, true)
-        end
-        tt:AddLine(s.boss .. " · " .. s.dungeon .. " (" .. (s.level or "?") .. ")", 0.85, 0.66, 0.24)
-      end,
-      click = s.id and function() R:OpenInJournal(s.id) end or nil,
-      btns = s.id and { { "Add", function() local ok, m = R:AddWanted(key, tostring(s.id), si, R.findSlot); if not ok then R:Print(m) end end, w = 44, tip = "Add to " .. set.name } } or nil }
+    if #list == 0 then
+      items[#items + 1] = { t = "note", text = "No level 58–60 dungeon drops listed for this slot yet." }
+    elseif pages > 1 then
+      items[#items + 1] = { t = "btns", list = {
+        { "<", function() R.dropPage = R.dropPage - 1 end, w = 24 },
+        { R.dropPage .. " / " .. pages, function() end, w = 70 },
+        { ">", function() R.dropPage = R.dropPage + 1 end, w = 24 },
+      } }
+    end
+    return { { t = "card", title = "Drops: " .. R.SLOTNAME[R.findSlot], right = #list .. " from level 58–60 dungeons", items = items } }
+
+  elseif mode == "Favourites" then
+    local favs = {}
+    for _, f in ipairs(c.fdjFavs or {}) do favs[#favs + 1] = f end
+    table.sort(favs, function(a, b) return (a.dungeon or "") .. (a.name or "") < (b.dungeon or "") .. (b.name or "") end)
+    local lastD
+    for _, f in ipairs(favs) do
+      if f.dungeon ~= lastD then items[#items + 1] = { t = "head", text = f.dungeon or "?" }; lastD = f.dungeon end
+      local info = R:ItemInfo(f.id)
+      items[#items + 1] = { t = "itemrow", icon = R:ItemIcon(f.id), qcol = QCOL[f.q or 1],
+        name = (info and info.link) or qname("[" .. (f.name or f.id) .. "]", f.q),
+        sub = (f.quest and ("Quest: " .. f.quest) or (f.boss or "?")) .. (f.slot and ("  ·  " .. f.slot) or ""),
+        tip = itemTip(f.id), click = function() R:OpenInJournal(f.id) end,
+        btns = R.parseSlot(f.slot) and addBtn(f.id, nil) or nil }
+    end
+    if #favs == 0 then
+      items[#items + 1] = { t = "note", text = "No favourites yet. Right-click items in the Dungeon Journal to add them" .. (key ~= R.key and " (log in on this character to update this list)." or ".") }
+    end
+    return { { t = "card", title = "Journal favourites", right = key == R.key and "live" or "saved at last log-in", items = items } }
+
+  else -- Plan: the set as a list
+    local n = 0
+    for _, s in ipairs(R.SLOTS) do
+      local w = set.slots[s[1]]
+      if w then
+        n = n + 1
+        local where = R:Where(key, w.id)
+        local st = where and WHERE[where] or { "unknown", "Wanted" }
+        local info = R:ItemInfo(w.id)
+        items[#items + 1] = { t = "itemrow", icon = R:ItemIcon(w.id), qcol = C[st[1]],
+          name = (info and info.link) or ("item " .. w.id),
+          sub = s[2] .. "  ·  " .. st[2] .. "  ·  " .. (w.src or R:JournalSource(w.id) or "source not set"),
+          tip = itemTip(w.id), click = function() R.findSlot = s[1] end,
+          btns = { { "x", function() R:RemoveWanted(key, si, s[1]) end, tip = "Remove from plan" } } }
+      end
+    end
+    if n == 0 then items[#items + 1] = { t = "note", text = "Nothing planned yet. Drag items onto the character, or shift-click one into the box." } end
+    return { { t = "card", title = set.name .. " as a list", right = n .. " items", items = items } }
   end
-  if #list == 0 then items[#items + 1] = { t = "row", l = "No level 58–60 dungeon drops listed for this slot yet.", lc = C.grey } end
-  ops[#ops + 1] = { t = "card", title = "Dungeon drops", right = #list .. " from level 58–60 dungeons", items = items }
-  return ops
 end

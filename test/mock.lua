@@ -1,8 +1,10 @@
+NILKEYS={TitleText=1,TitleContainer=1,CloseButton=1,portrait=1,PortraitContainer=1,Inset=1,closeButton=1,fwrSig=1,fwrTemplate=1}
 -- minimal WoW API mock
 local function obj()
   local o = {_shown=false, _text=""}
   return setmetatable(o, {__index=function(t,k)
     if type(k)=="string" and k:sub(1,1)=="_" then return nil end
+    if NILKEYS[k] then return nil end
     if k=="CreateFontString" or k=="CreateTexture" then return function() return obj() end end
     if k=="Show" then return function(s) s._shown=true end end
     if k=="Hide" then return function(s) s._shown=false end end
@@ -61,3 +63,4 @@ IsControlKeyDown=function() return false end
 IsShiftKeyDown=function() return false end
 GetItemIcon=function(id) return "icon"..id end
 GetInventorySlotInfo=function(n) return 1, "Interface\\PaperDoll\\UI-PaperDoll-Slot-"..n end
+SetPortraitTexture=function() end

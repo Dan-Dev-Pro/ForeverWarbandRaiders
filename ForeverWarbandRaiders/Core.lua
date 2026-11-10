@@ -2,7 +2,7 @@
 FWR = FWR or {}
 local R = FWR
 R.NAME = "Forever Warband Raiders"
-R.VERSION = "0.3.0"
+R.VERSION = "0.4.0"
 R.MAXLVL = 60
 
 -- Gear slots that matter for raiding (shirt and tabard left out)

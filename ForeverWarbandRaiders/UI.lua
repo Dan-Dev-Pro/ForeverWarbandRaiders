@@ -2,7 +2,7 @@
 -- Tabs describe their content as a list of ops (cards, rows, bars, inputs); this file draws them.
 local R = FWR
 
-local W, PAD, ROW = 560, 14, 18
+local W, H, PAD, ROW = 820, 600, 14, 18
 local GOLD = { 1, 0.82, 0 }
 local GREY = { 0.62, 0.62, 0.62 }
 R.COL = {
@@ -56,35 +56,63 @@ local function resetPools()
 end
 
 -- window ---------------------------------------------------------------------------------------
+-- A standard Blizzard window (portrait, title, inset, tabs along the bottom). Falls back to a plain
+-- framed panel if the client lacks the templates.
 function R:BuildFrame()
   if self.frame then return self.frame end
-  local f = CreateFrame("Frame", "FWRFrame", UIParent, "BackdropTemplate")
+  local f
+  for _, template in ipairs({ "ButtonFrameTemplate", "PortraitFrameTemplate", "BasicFrameTemplateWithInset" }) do
+    local ok, made = pcall(CreateFrame, "Frame", "FWRFrame", UIParent, template)
+    if ok and made then f = made; f.fwrTemplate = template; break end
+  end
+  if not f then
+    f = CreateFrame("Frame", "FWRFrame", UIParent, "BackdropTemplate")
+    backdrop(f, 0.97)
+  end
   self.frame = f
-  f:SetSize(W, 520)
+  f:SetSize(W, H)
   f:SetPoint("CENTER")
   f:SetFrameStrata("HIGH")
+  f:SetToplevel(true)
   f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", f.StartMoving)
   f:SetScript("OnDragStop", f.StopMovingOrSizing)
   f:SetClampedToScreen(true)
-  backdrop(f, 0.97)
   tinsert(UISpecialFrames, "FWRFrame")
   f:Hide()
 
-  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOPLEFT", PAD, -12)
+  -- title
+  local title = f.TitleText or (f.TitleContainer and f.TitleContainer.TitleText)
+  if not title then
+    title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOP", 0, -6)
+  end
+  f.title = title
   title:SetText(self.NAME)
 
-  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", -2, -2)
+  -- close button: the template's own, otherwise a stock one; plain Hide so it works in combat
+  local close = f.CloseButton or (f.TitleContainer and f.TitleContainer.CloseButton)
+  if not close then
+    close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -2, -2)
+  end
+  close:SetScript("OnClick", function() f:Hide() end)
 
-  -- character picker
+  -- portrait: the character being viewed
+  f.portrait = f.portrait or (f.PortraitContainer and f.PortraitContainer.portrait)
+  if f.Inset then
+    f.Inset:ClearAllPoints()
+    f.Inset:SetPoint("TOPLEFT", 4, -60)
+    f.Inset:SetPoint("BOTTOMRIGHT", -6, 26)
+  end
+
+  -- character picker, under the title like the default character window
   local prev = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  prev:SetSize(22, 20); prev:SetText("<"); prev:SetPoint("TOPLEFT", PAD, -38)
-  local next = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  next:SetSize(22, 20); next:SetText(">"); next:SetPoint("LEFT", prev, "RIGHT", 210, 0)
+  prev:SetSize(24, 20); prev:SetText("<"); prev:SetPoint("TOPLEFT", 70, -32)
   local who = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  who:SetPoint("LEFT", prev, "RIGHT", 6, 0); who:SetWidth(200); who:SetJustifyH("CENTER")
+  who:SetPoint("LEFT", prev, "RIGHT", 6, 0); who:SetWidth(260); who:SetJustifyH("CENTER")
+  local next = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  next:SetSize(24, 20); next:SetText(">"); next:SetPoint("LEFT", who, "RIGHT", 6, 0)
   f.who = who
   local function step(d)
     local list = self:Raiders()
@@ -97,29 +125,43 @@ function R:BuildFrame()
   prev:SetScript("OnClick", function() step(-1) end)
   next:SetScript("OnClick", function() step(1) end)
 
-  -- tabs
+  -- tabs along the bottom (Blizzard tab buttons when available)
   f.tabs = {}
-  local x = 0
-  for i = #self.TABS, 1, -1 do
-    local t = self.TABS[i]
-    local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    b:SetSize(t.w or 70, 20)
-    b:SetPoint("TOPRIGHT", -30 - x, -10)
-    x = x + (t.w or 70) + 2
+  f.Tabs = {}
+  local prevTab
+  for i, t in ipairs(self.TABS) do
+    local ok, b = pcall(CreateFrame, "Button", "FWRFrameTab" .. i, f, "PanelTabButtonTemplate")
+    if not ok or not b then
+      ok, b = pcall(CreateFrame, "Button", "FWRFrameTab" .. i, f, "CharacterFrameTabButtonTemplate")
+    end
+    if not ok or not b then
+      b = CreateFrame("Button", "FWRFrameTab" .. i, f, "UIPanelButtonTemplate")
+      b:SetSize(80, 22)
+    end
+    b:SetID(i)
     b:SetText(t.name)
-    b:SetScript("OnClick", function() self.tab = t.name; self:Refresh() end)
+    if prevTab then b:SetPoint("LEFT", prevTab, "RIGHT", 3, 0) else b:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 12, 2) end
+    if PanelTemplates_TabResize then pcall(PanelTemplates_TabResize, b, 0) end
+    b:SetScript("OnClick", function()
+      self.tab = t.name
+      if PlaySound and SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB then pcall(PlaySound, SOUNDKIT.IG_CHARACTER_INFO_TAB) end
+      self:Refresh()
+    end)
     f.tabs[t.name] = b
+    f.Tabs[i] = b
+    prevTab = b
   end
+  if PanelTemplates_SetNumTabs then pcall(PanelTemplates_SetNumTabs, f, #self.TABS) end
 
-  -- scrolling content
+  -- scrolling content inside the inset
   local sf = CreateFrame("ScrollFrame", "FWRScroll", f, "UIPanelScrollFrameTemplate")
-  sf:SetPoint("TOPLEFT", PAD - 4, -66)
-  sf:SetPoint("BOTTOMRIGHT", -30, 12)
+  sf:SetPoint("TOPLEFT", 12, -68)
+  sf:SetPoint("BOTTOMRIGHT", -30, 32)
   local child = CreateFrame("Frame", nil, sf)
-  child:SetSize(W - 2 * PAD - 20, 10)
+  child:SetSize(W - 12 - 30 - 4, 10)
   sf:SetScrollChild(child)
   f.child = child
-  f.cw = W - 2 * PAD - 20
+  f.cw = W - 12 - 30 - 4
   return f
 end
 
@@ -255,6 +297,51 @@ function R:Render(ops)
         bx = bx + bwid + 4
       end
       y = y + ROW + 6
+    elseif t == "cols" then
+      local top = y
+      local gap = 12
+      local lw = math.floor((w - gap) * (op.split or 0.5))
+      for _, sub in ipairs(op.left or {}) do draw(sub, x, lw) end
+      local ly = y
+      y = top
+      for _, sub in ipairs(op.right or {}) do draw(sub, x + lw + gap, w - lw - gap) end
+      y = math.max(y, ly)
+    elseif t == "head" then
+      y = y + 2
+      local s = text(x, y, w - (op.r and 150 or 0), op.text, R.COL.gold, "GameFontNormalSmall")
+      if op.r then text(x + w - 150, y, 150, op.r, R.COL.grey, nil, "RIGHT") end
+      local line = get("line", function() local l = child:CreateTexture(nil, "ARTWORK"); l:SetColorTexture(1, 0.82, 0, 0.25); return l end)
+      line:SetPoint("TOPLEFT", child, "TOPLEFT", x, -(y + 14)); line:SetSize(w, 1)
+      y = y + 19
+    elseif t == "itemrow" then
+      local H2 = 32
+      local ib = get("ibtn", function()
+        local b = CreateFrame("Button", nil, child)
+        b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        b.icon = b:CreateTexture(nil, "ARTWORK"); b.icon:SetSize(28, 28); b.icon:SetPoint("LEFT", 0, 0)
+        b.ring = b:CreateTexture(nil, "OVERLAY"); b.ring:SetTexture("Interface\\Common\\WhiteIconFrame"); b.ring:SetAllPoints(b.icon)
+        local hl = b:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(); hl:SetColorTexture(1, 0.82, 0, 0.07)
+        return b
+      end)
+      local bw = 0
+      for i = #(op.btns or {}), 1, -1 do
+        local bt = op.btns[i]
+        local bwid = bt.w or 24
+        button(x + w - bw - bwid, y + 7, bwid, bt[1], bt[2], bt.tip)
+        bw = bw + bwid + 2
+      end
+      ib:SetPoint("TOPLEFT", child, "TOPLEFT", x, -y)
+      ib:SetSize(w - bw - 2, H2)
+      ib.icon:SetTexture(op.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+      ib.icon:SetDesaturated(op.dim and true or false)
+      local q = op.qcol or { 0.6, 0.6, 0.6 }
+      ib.ring:SetVertexColor(q[1], q[2], q[3])
+      ib:SetScript("OnClick", op.click and function(_, button) op.click(button); R:Refresh() end or nil)
+      ib:SetScript("OnEnter", nil); ib:SetScript("OnLeave", nil)
+      tip(ib, op.tip)
+      text(x + 34, y + 2, w - 34 - bw - 4, op.name, op.nc, "GameFontNormalSmall")
+      text(x + 34, y + 17, w - 34 - bw - 4, op.sub, R.COL.grey)
+      y = y + H2 + 2
     elseif t == "paperdoll" then
       local S, G = 38, 5
       local top = y + 2
@@ -264,11 +351,17 @@ function R:Render(ops)
           s:SetSize(S, S)
           s:RegisterForClicks("LeftButtonUp", "RightButtonUp")
           s:RegisterForDrag("LeftButton")
-          s.edge = s:CreateTexture(nil, "BACKGROUND"); s.edge:SetAllPoints()
-          s.icon = s:CreateTexture(nil, "ARTWORK")
-          s.icon:SetPoint("TOPLEFT", 2, -2); s.icon:SetPoint("BOTTOMRIGHT", -2, 2)
-          s.hl = s:CreateTexture(nil, "HIGHLIGHT"); s.hl:SetAllPoints(s.icon)
-          s.hl:SetColorTexture(1, 1, 1, 0.15)
+          s.icon = s:CreateTexture(nil, "BORDER"); s.icon:SetAllPoints()
+          -- the classic slot frame around the icon
+          s.frame = s:CreateTexture(nil, "ARTWORK")
+          s.frame:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+          s.frame:SetSize(S * 64 / 37, S * 64 / 37); s.frame:SetPoint("CENTER", 0, -1)
+          -- status ring (green equipped, amber in bags or bank, grey wanted)
+          s.edge = s:CreateTexture(nil, "OVERLAY")
+          s.edge:SetTexture("Interface\\Common\\WhiteIconFrame"); s.edge:SetAllPoints()
+          s.sel = s:CreateTexture(nil, "OVERLAY", nil, 2)
+          s.sel:SetTexture("Interface\\Buttons\\CheckButtonHilight"); s.sel:SetBlendMode("ADD"); s.sel:SetAllPoints()
+          s:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
           return s
         end)
         b:SetPoint("TOPLEFT", child, "TOPLEFT", bx, -by)
@@ -276,7 +369,7 @@ function R:Render(ops)
         if type(slot) == "string" or not d then
           -- shirt and tabard: shown for the familiar layout only
           b.icon:SetTexture(R:EmptySlotTexture(slot)); b.icon:SetDesaturated(true); b.icon:SetAlpha(0.35)
-          b.edge:SetColorTexture(0.15, 0.15, 0.15, 1)
+          b.edge:Hide(); b.sel:Hide()
           b:SetScript("OnClick", nil); b:SetScript("OnReceiveDrag", nil)
           b:SetScript("OnEnter", nil); b:SetScript("OnLeave", nil)
           return
@@ -287,9 +380,11 @@ function R:Render(ops)
         else
           b.icon:SetTexture(R:ItemIcon(d.id)); b.icon:SetAlpha(1)
         end
-        local col = d.empty and { 0.25, 0.25, 0.25 } or (R.COL[d.state] or R.COL.grey)
-        if op.sel == slot then col = { 1, 0.82, 0 } end
-        b.edge:SetColorTexture(col[1], col[2], col[3], 1)
+        if d.empty then b.edge:Hide() else
+          local col = R.COL[d.state] or R.COL.grey
+          b.edge:SetVertexColor(col[1], col[2], col[3]); b.edge:Show()
+        end
+        if op.sel == slot then b.sel:Show() else b.sel:Hide() end
         local function dropped()
           local kind, id = GetCursorInfo()
           if kind == "item" and id then op.drop(slot, id); ClearCursor(); R:Refresh(); return true end
@@ -342,8 +437,11 @@ function R:Render(ops)
     elseif t == "card" then
       local top = y
       local card = get("card", function()
-        local c = CreateFrame("Frame", nil, child, "BackdropTemplate")
-        backdrop(c, 0.6, { 0.3, 0.26, 0.15 })
+        local ok, c = pcall(CreateFrame, "Frame", nil, child, "InsetFrameTemplate")
+        if not ok or not c then
+          c = CreateFrame("Frame", nil, child, "BackdropTemplate")
+          backdrop(c, 0.6, { 0.3, 0.26, 0.15 })
+        end
         c:SetFrameLevel(child:GetFrameLevel())
         return c
       end)
@@ -369,8 +467,20 @@ function R:Refresh()
   local f = self.frame
   if not f or not f:IsShown() then return end
   self.tab = self.tab or self.TABS[1].name
-  for name, b in pairs(f.tabs) do
-    if name == self.tab then b:LockHighlight() else b:UnlockHighlight() end
+  for i, t in ipairs(self.TABS) do
+    if t.name == self.tab then
+      if PanelTemplates_SetTab then pcall(PanelTemplates_SetTab, f, i) else f.tabs[t.name]:LockHighlight() end
+    elseif not PanelTemplates_SetTab then
+      f.tabs[t.name]:UnlockHighlight()
+    end
+  end
+  if f.portrait then
+    if self.view == self.key and SetPortraitTexture then
+      pcall(SetPortraitTexture, f.portrait, "player")
+    else
+      local cls = (self:Char(self.view).class or "")
+      f.portrait:SetTexture("Interface\\Icons\\ClassIcon_" .. cls:sub(1, 1) .. cls:sub(2):lower())
+    end
   end
   local c = self:Char(self.view)
   local role = self:JourneyRole(self.view)
