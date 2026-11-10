@@ -6,7 +6,7 @@ rt.execute('NS={}; UnitFactionGroup=function() return "Horde" end')
 for f in ['Core/Bootstrap.lua','Data/Dungeons.lua','Data/SharedLoot.lua','Systems/ItemSource.lua']:
     fn=rt.eval('function(src,name) local f,err=loadstring(src,name); if not f then error(err) end; return f("ForeverDungeonJournal", NS) end')
     fn(open(FD+f,encoding='utf-8').read(), f)
-for f in ['Core','Scan','Ready','Plans','Journal','UI','Panel']:
+for f in ['Core','Scan','Ready','Plans','Journal','BiS','UI','Panel']:
     rt.execute(open('../ForeverWarbandRaiders/%s.lua'%f).read())
 rt.execute(open('t1.lua').read().split('local r=R:Readiness')[0])
 rt.execute('''ForeverDungeonJournalCharacterDB={favouriteItems={["13361"]={id=13361,name="Skullforge Reaver",slot="One-Hand, Sword",quality=3,dungeon="Stratholme: Undead",boss="Baron Rivendare"},["12936"]={id=12936,name="Battleborn Armbraces",slot="Wrist, Plate",quality=3,dungeon="Upper Blackrock Spire",boss="Warchief Rend Blackhand"}},
@@ -21,8 +21,16 @@ def conv(x):
         return {k if isinstance(k,int) else str(k):conv(v) for k,v in x.items() if L.lua_type(v)!='function'}
     if L.lua_type(x)=='function': return None
     return x
+import os
 R=rt.globals().FWR
 out={}
+if os.environ.get('BIS'):
+    t7=open('t7.lua').read().split('-- without cap')[0]
+    rt.execute(t7)
+    rt.execute('FWR:Char().sets[1].pins={}; FWR:Char().sets[1].slots[1]={id=5002}; FWR:Char().sets[1].slots[13]={id=5010}; FWR:Char().sets[1].pins[13]=true; FWR:BisDirty()')
+    for m in ['Best','Weights']:
+        rt.execute('FWR.sideMode="%s"'%m)
+        out['Gear'+m]=conv(R.BuildOps(R,'Gear',R.key))
 for t in ['Ready','Gear','Lockouts','Prep','Settings']:
     out[t]=conv(R.BuildOps(R,t,R.key))
 c=R.Char(R,R.key)

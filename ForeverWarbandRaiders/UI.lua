@@ -285,6 +285,17 @@ function R:Render(ops)
         R:Refresh()
       end
       eb:SetScript("OnEnterPressed", submit)
+      -- boxes that hold a setting also save when you click away
+      eb:SetScript("OnEditFocusLost", function(self)
+        if R.focusBox == self then R.focusBox = nil end
+        if op.clear == false and not self.fwrBusy and self:GetText() ~= (op.value or "") then
+          self.fwrBusy = true
+          local ok, msg = op.fn(self:GetText())
+          if msg then R:Print(msg) end
+          self.fwrBusy = nil
+          R:Refresh()
+        end
+      end)
       eb:SetScript("OnEnter", nil); eb:SetScript("OnLeave", nil)
       tip(eb, op.tip)
       if op.btn then button(x + w - bwid, y, bwid, op.btn, submit) end

@@ -67,6 +67,7 @@ function R:ScanBags()
   local c = self:Char()
   c.bags = scanBags({ 0, 1, 2, 3, 4 })
   c.mount = self:HasMount(c.bags)
+  if self.BisDirty then self:BisDirty() end
 end
 
 function R:ScanBank()

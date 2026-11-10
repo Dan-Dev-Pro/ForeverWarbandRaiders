@@ -1,5 +1,5 @@
 local R=FWR
-for _,m in ipairs({"Favourites","Plan","Drops"}) do
+for _,m in ipairs({"Faves","Plan","Drops","Best","Weights"}) do
   R.tab="Gear"; R.sideMode=m; R:Refresh()
   local errs=0
   for i=1,#ALL do local o=ALL[i]

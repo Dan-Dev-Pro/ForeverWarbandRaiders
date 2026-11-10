@@ -121,11 +121,13 @@ body{margin:0;background:#1a1712;font-family:"Friz Quadrata TT","Trebuchet MS",s
 .ic.bad{background:#d33}.ic.bad::after{content:"✕";color:#fff;font-size:8px;font-style:normal;display:block;text-align:center;line-height:12px}
 .ic.warn{background:#e9a521}.ic.warn::after{content:"?";color:#000;font-size:9px;font-style:normal;display:block;text-align:center;line-height:12px}'''
 tabs=['Ready','Gear','Lockouts','Prep','Settings']
+import os
+shots=[t for t in ops if not t.startswith('_')]
 with sync_playwright() as p:
     b=p.chromium.launch(); pg=b.new_page(viewport={'width':900,'height':900},device_scale_factor=2)
-    for t in tabs:
+    for t in shots:
         tb=''.join('<b class="btn%s">%s</b>'%(' sel' if x==t else '',x) for x in tabs)
-        tb=''.join('<b class="tab%s">%s</b>'%(' on' if x==t else '',x) for x in tabs)
+        tb=''.join('<b class="tab%s">%s</b>'%(' on' if t.startswith(x) else '',x) for x in tabs)
         body='<div class="bz"><div class="por"></div><div class="ttl">Forever Warband Raiders</div><b class="x">✕</b><div class="pick"><b class="btn sm">&lt;</b><span class="who">Quail <span style="color:#9e9e9e">60 Warrior · Main</span></span><b class="btn sm">&gt;</b></div><div class="inset">%s</div><div class="tabs">%s</div></div>'%(''.join(draw(o) for o in ops[t]),tb)
         pg.set_content('<html><head><style>%s</style></head><body><div id="shot" style="display:inline-block;padding:4px 4px 44px 4px">%s</div></body></html>'%(CSS,body))
         pg.locator('#shot').screenshot(path='fwr-%s.png'%t.lower())

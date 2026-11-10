@@ -18,6 +18,8 @@ A WoW Forever addon for level 60: is each character raid ready, what gear are th
 
 **Works with ForeverDungeonJournal** (optional): planned items show which boss drops them and open the journal when clicked, your journal favourites can be added to a gear set in one click, a drop finder lists level 58–60 dungeon loot for any slot in your armour type, and the Lockouts tab shows your dungeon runs this week.
 
+**Best in slot:** each gear set has its own stat weights and caps. Caps (hit, spell hit, defense) are filled first, then items are scored on your weights, with Blessing of Kings applied to primary stats. It compares Dungeon Journal loot and quest rewards plus anything you own or plan, and you can pin slots to keep an item.
+
 Plans can be shared: **Export** gives a text string a friend can **Import**.
 
 ## Commands

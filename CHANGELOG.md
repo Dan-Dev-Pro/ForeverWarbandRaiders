@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+- Best in slot per gear set: caps first (hit, spell hit, defense, in that order), then your stat weights
+- Blessing of Kings and other % bonuses raise primary stats, so they beat flat attack power at similar value
+- Compares Dungeon Journal drops and dungeon quest rewards plus everything you own, wear, plan or favourite
+- Class weapon and armour rules, weapon style per set, unique items, pins for slots you want to keep
+- Weights view with starter templates; settings boxes now save when you click away
+
 ## 0.4.0
 - Blizzard-style window: portrait, title bar, inset panels, tabs along the bottom, native slot frames
 - Two-column layouts on every tab, less scrolling

@@ -42,6 +42,7 @@ function R:AddWanted(key, text, setIdx, forceSlot)
     end
     if #slots > 1 and set.slots[slot] and set.slots[slot].id ~= id then slot = slots[2] end
   end
+  if R.BisDirty then R:BisDirty() end
   set.slots[slot] = { id = id, src = (src ~= "" and src) or (set.slots[slot] and set.slots[slot].id == id and set.slots[slot].src) or nil }
   return true, self:ItemName(id)
 end
@@ -58,6 +59,7 @@ end
 
 function R:RemoveWanted(key, setIdx, slot)
   local c = self:Char(key)
+  if self.BisDirty then self:BisDirty() end
   c.sets[setIdx].slots[slot] = nil
 end
 

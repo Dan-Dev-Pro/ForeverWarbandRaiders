@@ -8,6 +8,6 @@ if os.environ.get('FDJ'):
     for f in ['Core/Bootstrap.lua','Data/Dungeons.lua','Data/SharedLoot.lua','Systems/ItemSource.lua']:
         fn=rt.eval('function(src,name) local f,err=loadstring(src,name); if not f then error(err) end; return f("ForeverDungeonJournal", NS) end')
         fn(open(FD+f,encoding='utf-8').read(), f)
-for f in ['Core','Scan','Ready','Plans','Journal','UI','Panel']:
+for f in ['Core','Scan','Ready','Plans','Journal','BiS','UI','Panel']:
     rt.execute(open('../ForeverWarbandRaiders/%s.lua'%f).read())
 for s in sys.argv[1:]: rt.execute(open(s).read())

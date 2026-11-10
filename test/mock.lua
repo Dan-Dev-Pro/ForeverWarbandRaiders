@@ -1,4 +1,4 @@
-NILKEYS={TitleText=1,TitleContainer=1,CloseButton=1,portrait=1,PortraitContainer=1,Inset=1,closeButton=1,fwrSig=1,fwrTemplate=1}
+NILKEYS={TitleText=1,TitleContainer=1,CloseButton=1,portrait=1,PortraitContainer=1,Inset=1,closeButton=1,fwrSig=1,fwrBusy=1,fwrTemplate=1}
 -- minimal WoW API mock
 local function obj()
   local o = {_shown=false, _text=""}

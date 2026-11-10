@@ -131,7 +131,7 @@ local function gearOps(key)
     else
       R.findSlot = slot
       R.dropPage = 1
-      if R:FDJ() then R.sideMode = "Drops" end
+      if R:FDJ() and R.sideMode ~= "Best" then R.sideMode = "Drops" end
     end
   end
   doll.drop = function(slot, id)
@@ -366,7 +366,7 @@ function R:GearSideOps(key, si)
   local c = self:Char(key)
   local set = c.sets[si]
   local hasJ = self:FDJ() ~= nil
-  local modes = hasJ and { "Drops", "Favourites", "Plan" } or { "Plan" }
+  local modes = hasJ and { "Best", "Weights", "Drops", "Faves", "Plan" } or { "Best", "Weights", "Plan" }
   local mode = R.sideMode
   local valid = false
   for _, m in ipairs(modes) do if m == mode then valid = true end end
@@ -374,7 +374,7 @@ function R:GearSideOps(key, si)
 
   local seg = {}
   for _, m in ipairs(modes) do
-    seg[#seg + 1] = { (m == mode and "> " or "") .. m, function() R.sideMode = m; R.dropPage = 1 end, w = 100 }
+    seg[#seg + 1] = { (m == mode and "> " or "") .. m, function() R.sideMode = m; R.dropPage = 1 end, w = hasJ and 68 or 100 }
   end
   local items = { { t = "btns", list = seg } }
   local inPlan = {}
@@ -440,7 +440,11 @@ function R:GearSideOps(key, si)
     end
     return { { t = "card", title = "Drops: " .. R.SLOTNAME[R.findSlot], right = #list .. " from level 58–60 dungeons", items = items } }
 
-  elseif mode == "Favourites" then
+  elseif mode == "Best" then
+    return R:BestOps(key, si, items)
+  elseif mode == "Weights" then
+    return R:WeightsOps(key, si, items)
+  elseif mode == "Faves" then
     local favs = {}
     for _, f in ipairs(c.fdjFavs or {}) do favs[#favs + 1] = f end
     table.sort(favs, function(a, b) return (a.dungeon or "") .. (a.name or "") < (b.dungeon or "") .. (b.name or "") end)
@@ -478,4 +482,123 @@ function R:GearSideOps(key, si)
     if n == 0 then items[#items + 1] = { t = "note", text = "Nothing planned yet. Drag items onto the character, or shift-click one into the box." } end
     return { { t = "card", title = set.name .. " as a list", right = n .. " items", items = items } }
   end
+end
+
+
+-- Best in slot -------------------------------------------------------------------------------------
+local function fmt(v) return (math.floor(v * 10 + 0.5) / 10) end
+
+function R:BestOps(key, si, items)
+  local c = self:Char(key)
+  local set = self:SetWeights(key, si)
+  local r = self:BisResult(key, si)
+  for _, cp in ipairs(r.caps) do
+    local now
+    for _, x in ipairs(r.curCaps) do if x.key == cp.key then now = x.have end end
+    local ok = cp.have >= cp.cap - 1e-6
+    items[#items + 1] = { t = "row", icon = R.ICON[ok and "ok" or "bad"], l = cp.label:gsub(" cap", ""),
+      r = fmt(cp.have) .. " / " .. fmt(cp.cap) .. (now and ("  ·  now " .. fmt(now)) or ""), rc = ok and C.ok or C.bad, rw = 170,
+      tip = ok and "Cap reached with this set." or "No combination of known items reaches this cap; it's filled as far as possible first." }
+  end
+  local gain = r.curScore > 0 and ((r.score - r.curScore) / r.curScore * 100) or 0
+  items[#items + 1] = { t = "row", l = "Score " .. math.floor(r.score + 0.5),
+    r = "now " .. math.floor(r.curScore + 0.5) .. (gain > 0.05 and string.format("  ·  +%.1f%%", gain) or ""), rc = gain > 0.05 and C.ok or C.grey, rw = 170,
+    tip = "Weighted stats after caps. 'Now' is your plan, or what you're wearing in slots with no plan." }
+  items[#items + 1] = { t = "btns", list = {
+    { "Use all", function() R:UseBis(key, si) end, w = 80, tip = "Put every pick into " .. set.name .. " (pinned slots stay)" },
+    { "Recalculate", function() R:BisDirty() end, w = 100 },
+  } }
+  if r.pending > 0 then
+    items[#items + 1] = { t = "note", text = r.pending .. " items still loading from the game; this updates by itself." }
+  end
+  items[#items + 1] = { t = "head", text = "Picks", r = r.pool .. " items compared" }
+  for _, slot in ipairs(R.BIS_SLOTS) do
+    local p = r.pick[slot]
+    local planned = set.slots[slot]
+    if p then
+      local rec = p.rec
+      local info = R:ItemInfo(rec.id)
+      local cur = r.current[slot]
+      local delta = cur and (p.score - (function() local s2 = 0; for k, v in pairs(cur.st) do local wk = set.weights[k]; if wk then s2 = s2 + v * wk end end; return s2 end)()) or p.score
+      local same = planned and planned.id == rec.id
+      local sub = R.SLOTNAME[slot] .. "  ·  " .. (R:JournalSource(rec.id) or (R:Where(key, rec.id) and "you have it") or "")
+      if not same and delta > 0.5 then sub = sub .. "  ·  |cff59d959+" .. math.floor(delta + 0.5) .. "|r" end
+      local alt = r.alts[slot]
+      items[#items + 1] = { t = "itemrow", icon = R:ItemIcon(rec.id), qcol = QCOL[rec.q or 1],
+        name = ((rec.flags.special) and "|cffffb333*|r " or "") .. ((info and info.link) or rec.name or ("item " .. rec.id)),
+        sub = sub,
+        tip = itemTip(rec.id, function(tt)
+          tt:AddLine(" ")
+          tt:AddLine("Score " .. math.floor(p.score + 0.5) .. (p.pinned and "  (pinned)" or ""), 1, 0.82, 0)
+          if rec.flags.special then tt:AddLine("Has an effect the score can't value. Pin it if you rate it higher.", 1, 0.7, 0.2, true) end
+          for i, a in ipairs(alt or {}) do
+            local ai = R:ItemInfo(a.rec.id)
+            tt:AddLine((i == 1 and "Next best: " or "Then: ") .. ((ai and ai.name) or a.rec.name or "?"), 0.8, 0.8, 0.8)
+          end
+          tt:AddLine("Click to open in Dungeon Journal", 0.6, 0.6, 0.6)
+        end),
+        click = function() R:OpenInJournal(rec.id) end,
+        btns = {
+          { same and "In plan" or "Use", function() if not same then R:UseBis(key, si, slot) end end, w = same and 56 or 40 },
+          { set.pins[slot] and "Pinned" or "Pin", function()
+              if set.pins[slot] then set.pins[slot] = nil elseif planned then set.pins[slot] = true else R:Print("Plan an item in this slot before pinning it.") end
+              R:BisDirty()
+            end, w = 54, tip = "Pinned slots keep your planned item; the rest of the set is built around it" },
+        } }
+    else
+      items[#items + 1] = { t = "row", l = "|cff9d9d9d" .. R.SLOTNAME[slot] .. ":|r nothing usable found", lc = C.grey }
+    end
+  end
+  items[#items + 1] = { t = "note", text = "* has a Use or proc effect that weights can't measure." }
+  return { { t = "card", title = "Best in slot: " .. set.name, right = R.STYLENAME[set.style] or "", items = items } }
+end
+
+function R:WeightsOps(key, si, items)
+  local set = self:SetWeights(key, si)
+  local function dirty() set.template = set.template; R:BisDirty() end
+  local function num(tbl, k)
+    return function(v)
+      v = (v or ""):gsub(",", ".")
+      local n = tonumber(v)
+      if v == "" then n = 0 end
+      if not n then return false, "Enter a number." end
+      tbl[k] = n ~= 0 and n or nil
+      dirty()
+    end
+  end
+  local tidx = 1
+  for i, t in ipairs(R.TEMPLATES) do if t.id == (R.pickTemplate or set.template) then tidx = i end end
+  local tpl = R.TEMPLATES[tidx]
+  items[#items + 1] = { t = "head", text = "Starting point" }
+  items[#items + 1] = { t = "btns", list = {
+    { "<", function() R.pickTemplate = R.TEMPLATES[((tidx - 2) % #R.TEMPLATES) + 1].id end, w = 24 },
+    { tpl.name, function() end, w = 140 },
+    { ">", function() R.pickTemplate = R.TEMPLATES[(tidx % #R.TEMPLATES) + 1].id end, w = 24 },
+    { "Load", function() R:ApplyTemplate(set, tpl.id); R.pickTemplate = nil; R:BisDirty() end, w = 60,
+      tip = "Replaces this set's weights, caps and weapon style with the starter. They're rough: tune them." },
+  } }
+  local sidx = 1
+  for i, st in ipairs(R.STYLES) do if st == set.style then sidx = i end end
+  items[#items + 1] = { t = "row", l = "Weapons", r = R.STYLENAME[set.style] or "?", rc = C.white, rw = 200,
+    click = function() set.style = R.STYLES[(sidx % #R.STYLES) + 1]; dirty() end, tip = "Click to switch" }
+  items[#items + 1] = { t = "row", icon = set.kings and R.ICON.ok or R.ICON.bad, l = "Blessing of Kings (+10% primary stats)",
+    click = function() set.kings = not set.kings; dirty() end, tip = "Click to switch. Strength, Agility, Stamina, Intellect and Spirit count 10% more." }
+  items[#items + 1] = { t = "input", label = "Other primary bonus %", value = tostring(set.primaryPct or 0), clear = false,
+    fn = function(v) local n = tonumber(v); if not n then return false, "Enter a number." end; set.primaryPct = n; dirty() end }
+
+  items[#items + 1] = { t = "head", text = "Caps: filled first, in this order", r = "0 = off" }
+  for _, cdef in ipairs(R.CAPS) do
+    local k = cdef[1]
+    items[#items + 1] = { t = "input", label = cdef[2], value = tostring(set.caps[k] or 0), clear = false, fn = num(set.caps, k) }
+    if (tonumber(set.caps[k]) or 0) > 0 then
+      items[#items + 1] = { t = "input", label = "  from talents/other", value = tostring(set.capBase[k] or 0), clear = false, fn = num(set.capBase, k) }
+    end
+  end
+  items[#items + 1] = { t = "head", text = "Value per point", r = "blank = ignored" }
+  for _, st in ipairs(R.STATS) do
+    local k = st[1]
+    items[#items + 1] = { t = "input", label = st[2] .. (st[3] and " *" or ""), value = set.weights[k] and tostring(set.weights[k]) or "", clear = false, fn = num(set.weights, k) }
+  end
+  items[#items + 1] = { t = "note", text = "* primary stats: Kings and the bonus above apply. Starters are rough; replace them with your own numbers." }
+  return { { t = "card", title = "Weights: " .. set.name, right = (R:TemplateByID(set.template) or {}).name, items = items } }
 end
