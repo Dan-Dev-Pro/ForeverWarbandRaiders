@@ -16,6 +16,8 @@ A WoW Forever addon for level 60: is each character raid ready, what gear are th
 | Prep | Consumables per raid night, stock across the warband, who crafts what, and a to-do list of mail / craft / buy |
 | Settings | Gold and durability targets, raid nights, enchant slots, custom checks, set names, forget characters |
 
+**Works with ForeverDungeonJournal** (optional): planned items show which boss drops them and open the journal when clicked, your journal favourites can be added to a gear set in one click, a drop finder lists level 58–60 dungeon loot for any slot in your armour type, and the Lockouts tab shows your dungeon runs this week.
+
 Plans can be shared: **Export** gives a text string a friend can **Import**.
 
 ## Commands

@@ -1,9 +1,18 @@
 import lupa.lua51 as L, json
 rt=L.LuaRuntime(unpack_returned_tuples=True)
 rt.execute(open('mock.lua').read())
-for f in ['Core','Scan','Ready','Plans','UI','Panel']:
+FD='/mnt/user-data/uploads/_forever_/Interface/AddOns/ForeverDungeonJournal/'
+rt.execute('NS={}; UnitFactionGroup=function() return "Horde" end')
+for f in ['Core/Bootstrap.lua','Data/Dungeons.lua','Data/SharedLoot.lua','Systems/ItemSource.lua']:
+    fn=rt.eval('function(src,name) local f,err=loadstring(src,name); if not f then error(err) end; return f("ForeverDungeonJournal", NS) end')
+    fn(open(FD+f,encoding='utf-8').read(), f)
+for f in ['Core','Scan','Ready','Plans','Journal','UI','Panel']:
     rt.execute(open('../ForeverWarbandRaiders/%s.lua'%f).read())
 rt.execute(open('t1.lua').read().split('local r=R:Readiness')[0])
+rt.execute('''ForeverDungeonJournalCharacterDB={favouriteItems={["13361"]={id=13361,name="Skullforge Reaver",slot="One-Hand, Sword",quality=3,dungeon="Stratholme: Undead",boss="Baron Rivendare"},["12936"]={id=12936,name="Battleborn Armbraces",slot="Wrist, Plate",quality=3,dungeon="Upper Blackrock Spire",boss="Warchief Rend Blackhand"}},
+ runLog={runs={{dungeon="Blackmaw Hold",created=NOW-3600,kills={{b="Impaan the Imprisoner"},{b="Bonesnout"}}},{dungeon="Blackmaw Hold",created=NOW-7200,kills={{b="Impaan the Imprisoner"}}},{dungeon="Shaper's Terrace",created=NOW-90000,kills={{b="x"}}}}}}
+ITEMS[13361]={"Skullforge Reaver","INVTYPE_WEAPON"}; ITEMS[12936]={"Battleborn Armbraces","INVTYPE_WRIST"}
+FWR:SyncJournal(); FWR.findSlot=1''')
 def conv(x):
     if L.lua_type(x)=='table':
         keys=list(x.keys())

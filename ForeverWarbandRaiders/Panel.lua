@@ -95,12 +95,17 @@ local function gearOps(key)
       local where = R:Where(key, w.id)
       local st = where and WHERE[where] or { "unknown", "Wanted" }
       items[#items + 1] = { t = "row", icon = R.ICON[st[1]], l = "|cff9d9d9d" .. sname .. ":|r " .. R:ItemName(w.id),
-        r = (where == "bags" or where == "bank") and st[2] or (w.src or st[2]), rc = where and C[st[1]] or C.grey, rw = 170,
+        r = (where == "bags" or where == "bank") and st[2] or (w.src or R:JournalSource(w.id) or st[2]),
+        rc = where and C[st[1]] or C.grey, rw = 190,
+        click = R:FDJ() and function() R:OpenInJournal(w.id) end or nil,
         tip = function(tt)
           if GameTooltip.SetItemByID then tt:SetItemByID(w.id) else tt:SetHyperlink("item:" .. w.id) end
           tt:AddLine(" ")
           tt:AddLine("Status: " .. st[2], 1, 0.82, 0)
+          local js = R:JournalSource(w.id)
           if w.src then tt:AddLine("Source: " .. w.src, 0.9, 0.9, 0.9) end
+          if js then tt:AddLine("Dungeon Journal: " .. js, 0.85, 0.66, 0.24) end
+          if R:FDJ() then tt:AddLine("Click to open in Dungeon Journal", 0.6, 0.6, 0.6) end
         end,
         btns = { { "x", function() R:RemoveWanted(key, si, slot) end, tip = "Remove from plan" } } }
     else
@@ -111,6 +116,10 @@ local function gearOps(key)
     items[#items + 1] = { t = "note", text = hidden .. " slots not planned yet." }
   end
   ops[#ops + 1] = { t = "card", title = set.name, right = total > 0 and (have .. "/" .. total .. " owned") or "No items yet", items = items }
+
+  if R:FDJ() then
+    for _, op in ipairs(R:JournalGearOps(key, si)) do ops[#ops + 1] = op end
+  end
 
   ops[#ops + 1] = { t = "card", title = "Share a plan", items = {
     { t = "note", text = "Export copies both gear sets and the prep list into the box. Paste a friend's string in and press Enter to import it onto this character." },
@@ -129,6 +138,23 @@ local function lockoutOps(key)
   ops[#ops + 1] = { t = "card", title = "Weekly reset", right = w and R:Dur(w) or "Unknown", rc = C.gold, items = {
     { t = "note", text = exact and "Raid lockouts clear at the weekly reset." or "Reset time taken from your saved lockouts." },
   } }
+  if R:FDJ() then
+    local runs = R:RecentRuns(key, 7)
+    local items = {}
+    local F = R:FDJ()
+    if key == R.key and F.RunLogIsCapped then
+      local ok, capped = pcall(F.RunLogIsCapped)
+      if ok and capped then items[#items + 1] = { t = "row", icon = R.ICON.bad, l = "Instance cap reached", lc = C.bad, r = "wait before the next run" } end
+    end
+    local total = 0
+    for _, r in ipairs(runs) do
+      total = total + r.n
+      items[#items + 1] = { t = "row", l = r.dungeon, r = r.n .. (r.n == 1 and " run" or " runs") .. " · " .. r.bosses .. " bosses · last " .. ago(r.last) }
+    end
+    if #runs == 0 then items[#items + 1] = { t = "row", l = "No dungeon runs in the last 7 days", lc = C.grey } end
+    ops[#ops + 1] = { t = "card", title = "Dungeon runs: " .. cname(key), right = total > 0 and (total .. " this week") or "from Dungeon Journal", items = items }
+  end
+
   for _, k in ipairs(R:Raiders()) do
     local o = R:Char(k)
     local items = {}
@@ -261,4 +287,82 @@ local BUILD = { Ready = readyOps, Gear = gearOps, Lockouts = lockoutOps, Prep = 
 
 function R:BuildOps(tab, key)
   return (BUILD[tab] or readyOps)(key or self.view or self.key)
+end
+
+-- Gear tab: Dungeon Journal favourites and drop finder ---------------------------------------------
+local QHEX = { [0] = "9d9d9d", [1] = "ffffff", [2] = "1eff00", [3] = "0070dd", [4] = "a335ee", [5] = "ff8000" }
+
+function R:JournalGearOps(key, si)
+  local ops = {}
+  local c = self:Char(key)
+  local set = c.sets[si]
+  local inPlan = {}
+  for _, w in pairs(set.slots) do inPlan[w.id] = true end
+
+  -- favourites
+  local favItems = {}
+  for _, f in ipairs(c.fdjFavs or {}) do
+    if not inPlan[f.id] then
+      local slots = R.parseSlot(f.slot)
+      local fi = R:ItemInfo(f.id)
+      favItems[#favItems + 1] = { t = "row", l = (fi and fi.link) or ("|cff" .. (QHEX[f.q] or "ffffff") .. "[" .. (f.name or f.id) .. "]|r"),
+        r = f.quest and ("Quest · " .. (f.dungeon or "?")) or ((f.boss or "?") .. " · " .. (f.dungeon or "?")), rw = 200,
+        tip = function(tt) if tt.SetItemByID then tt:SetItemByID(f.id) else tt:SetHyperlink("item:" .. f.id) end end,
+        btns = slots and { { "Add", function() local ok, m = R:AddWanted(key, tostring(f.id), si, nil); if not ok then R:Print(m) end end, w = 44, tip = "Add to " .. set.name } } or nil }
+    end
+  end
+  if #favItems > 0 or (c.fdjFavs and #c.fdjFavs > 0) then
+    if #favItems == 0 then favItems[1] = { t = "row", l = "All your favourites are in this plan.", lc = C.ok } end
+    ops[#ops + 1] = { t = "card", title = "Journal favourites", right = (key == R.key) and "live" or ("as of " .. (c.fdjSeen and R:Dur(time() - c.fdjSeen) .. " ago" or "?")), items = favItems }
+  end
+
+  -- drop finder
+  R.findSlot = R.findSlot or 1
+  local slotIdx = 1
+  for i, s in ipairs(R.SLOTS) do if s[1] == R.findSlot then slotIdx = i end end
+  local function stepSlot(d)
+    slotIdx = ((slotIdx - 1 + d) % #R.SLOTS) + 1
+    R.findSlot = R.SLOTS[slotIdx][1]
+  end
+  local armor = R.CLASS_ARMOR[c.class or ""]
+  local items = {
+    { t = "btns", list = {
+      { "<", function() stepSlot(-1) end, w = 24 },
+      { R.SLOTNAME[R.findSlot], function() end, w = 110 },
+      { ">", function() stepSlot(1) end, w = 24 },
+      { R.allArmor and "All armour" or ((armor and (armor:sub(1, 1):upper() .. armor:sub(2))) or "All") .. " only",
+        function() R.allArmor = not R.allArmor end, w = 110, tip = "Switch between your armour type and every type" },
+    } },
+  }
+  local list = R:Suggestions(key, R.findSlot, R.allArmor)
+  local planned = set.slots[R.findSlot]
+  for i, s in ipairs(list) do
+    if i > 30 then
+      items[#items + 1] = { t = "note", text = (#list - 30) .. " more not shown." }
+      break
+    end
+    local info = s.id and R:ItemInfo(s.id)
+    local name = (info and info.link) or ("|cff" .. (QHEX[s.q] or "ffffff") .. "[" .. s.name .. "]|r")
+    local mark = (planned and s.id and planned.id == s.id) and "|cffffd100> |r" or ""
+    items[#items + 1] = { t = "row", l = mark .. name .. (s.stats ~= "" and (" |cff9d9d9d" .. s.stats .. "|r") or ""),
+      r = s.boss .. " · " .. s.dungeon, rw = 200,
+      tip = function(tt)
+        if s.id then
+          if tt.SetItemByID then tt:SetItemByID(s.id) else tt:SetHyperlink("item:" .. s.id) end
+        else
+          tt:SetText(s.name, 1, 1, 1)
+          for _, line in ipairs(s.tip or {}) do
+            if type(line) == "table" then tt:AddDoubleLine(line[1], line[2], 1, 1, 1, 1, 1, 1)
+            else tt:AddLine(line, 1, 1, 1, true) end
+          end
+          tt:AddLine("Item ID not known yet: loot or link it once to add it.", 1, 0.5, 0.5, true)
+        end
+        tt:AddLine(s.boss .. " · " .. s.dungeon .. " (" .. (s.level or "?") .. ")", 0.85, 0.66, 0.24)
+      end,
+      click = s.id and function() R:OpenInJournal(s.id) end or nil,
+      btns = s.id and { { "Add", function() local ok, m = R:AddWanted(key, tostring(s.id), si, R.findSlot); if not ok then R:Print(m) end end, w = 44, tip = "Add to " .. set.name } } or nil }
+  end
+  if #list == 0 then items[#items + 1] = { t = "row", l = "No level 58–60 dungeon drops listed for this slot yet.", lc = C.grey } end
+  ops[#ops + 1] = { t = "card", title = "Dungeon drops", right = #list .. " from level 58–60 dungeons", items = items }
+  return ops
 end
